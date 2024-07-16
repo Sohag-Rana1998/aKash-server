@@ -3,6 +3,7 @@ const app = express();
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser')
 const cors = require("cors");
+const bcrypt = require('bcryptjs');
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config()
 app.use(cors({
@@ -29,6 +30,9 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   }
 });
+
+
+
 
 
 
@@ -61,9 +65,22 @@ const verifyToken = (req, res, next) => {
 
 const cookieOptions = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production" ? true : false,
-  sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
 };
+
+
+
+
+
+
+
+
+
+
+
+
+
 async function run() {
   try {
 
@@ -74,34 +91,87 @@ async function run() {
 
     app.post('/jwt', async (req, res) => {
       const user = req.body;
-      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '365d', })
+      const email = user?.email;
+      const isExist = await usersCollection.findOne({ email: email });
+      if (isExist) {
+        return res.status(400).send({ msg: 'User already exists' });
+      }
+
+      const payload = {
+        user: {
+          email: email,
+          pin: user.pin
+        }
+      }
+      const token = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1d', })
+      console.log('token-----', token);
       res
         .cookie('token', token, cookieOptions)
         .send({ success: true })
     })
 
     app.post('/logout', async (req, res) => {
-      const user = req.user;
+      const user = null;
 
       res.clearCookie("token", { ...cookieOptions, maxAge: 0 })
-        .send({ success: true });
+        .send(user);
     })
 
 
-    // verify admin here
+    app.post('/register', async (req, res) => {
+      const userData = req.body;
+      console.log(userData);
+      const salt = await bcrypt.genSalt(10);
+      userData.pin = await bcrypt.hash(userData.pin, salt);
+      console.log('salt', salt);
+      console.log('pin', userData.pin);
+      userData.balance = 0;
+      userData.status = 'pending';
+      const result = await usersCollection.insertOne(userData);
+      res.send(result);
+    })
 
-    // const verifyAdmin = async (req, res, next) => {
-    //   const email = req.user.email;
-    //   const query = { email: email }
-    //   const user = await usersCollection.findOne(query);
-    //   const isAdmin = user?.role === "admin";
-    //   if (!isAdmin) {
-    //     return res.status(403).send({ message: 'forbidden access' })
-    //   }
-    //   next();
-    // }
+
+    app.post('/login', async (req, res) => {
+      const userData = req.body;
+      const email = userData?.email;
+      console.log(email);
+      const pin = userData?.pin;
+      const user = await usersCollection.findOne({ email: email });
+      console.log(user);
+      if (!user) {
+        return res.status(400).send({ msg: 'email not found Invalid credentials' });
+      }
+
+      const isMatch = await bcrypt.compare(pin, user?.pin);
+
+      if (!isMatch) {
+        return res.status(400).send({ msg: 'not matched Invalid credentials' });
+      }
 
 
+      const userDataForSend = { name: user?.name, mobile: user?.mobile, email: user?.email, role: user?.role, status: user?.status, balance: user?.balance }
+
+      const payload = {
+        userData: {
+          email: email,
+          pin: pin
+        }
+      }
+      const token = jwt.sign(payload, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1d', })
+      console.log('token-----', token);
+      res
+        .cookie('token', token, cookieOptions)
+        .send(userDataForSend)
+
+    })
+
+
+    app.get('/user', verifyToken, async (req, res) => {
+      const user = await usersCollection.findOne({ email: req?.user?.email });
+      res.send(user);
+
+    });
 
 
 
