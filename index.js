@@ -88,12 +88,42 @@ async function run() {
     const usersCollection = client.db("aKashDB").collection("users");
 
 
+    // use verify admin after verifyToken
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      console.log('verifyAdmin', email);
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+      const isAdmin = user?.role === 'admin';
+      console.log("verify admin", isAdmin);
+      if (!isAdmin) {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
+      next();
+    }
+    // use verify admin after verifyToken
+    const verifyAgent = async (req, res, next) => {
+      const email = req.decoded.email;
+      console.log('verifyAdmin', email);
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+      const isAdmin = user?.role === 'agent';
+      console.log("verify agent", isAdmin);
+      if (!isAdmin) {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
+      next();
+    }
+
+
 
     app.post('/jwt', async (req, res) => {
       const user = req.body;
       const email = user?.email;
-      const isExist = await usersCollection.findOne({ email: email });
-      if (isExist) {
+      const mobile = user?.mobile
+      const isExistEmail = await usersCollection.findOne({ email: email });
+      const isExistPhone = await usersCollection.findOne({ mobile: mobile });
+      if (isExistEmail || isExistPhone) {
         return res.status(400).send({ msg: 'User already exists' });
       }
 
@@ -148,10 +178,6 @@ async function run() {
       if (!isMatch) {
         return res.status(400).send({ msg: 'not matched Invalid credentials' });
       }
-
-
-      const userDataForSend = { name: user?.name, mobile: user?.mobile, email: user?.email, role: user?.role, status: user?.status, balance: user?.balance }
-
       const payload = {
         userData: {
           email: email,
@@ -162,18 +188,75 @@ async function run() {
       console.log('token-----', token);
       res
         .cookie('token', token, cookieOptions)
-        .send(userDataForSend)
+        .send(user)
 
     })
 
 
+    // update a user info
+    app.put('/update-user/:id', async (req, res) => {
+      const id = req.params.id
+      const userData = req.body
+      console.log('dataaaaaaaaaaaaa', userData);
+      const query = { _id: new ObjectId(id) }
+      const options = { upsert: true }
+      const updateDoc = {
+        $set: {
+          ...userData,
+        },
+      }
+      const result = await usersCollection.updateOne(query, updateDoc, options)
+      const updateUser = await usersCollection.findOne(query)
+      res.send(updateUser);
+    })
+
+
     app.get('/user', verifyToken, async (req, res) => {
-      const user = await usersCollection.findOne({ email: req?.user?.email });
+      const email = req?.user?.userData?.email;
+      console.log("Userrrrr", email);
+      const user = await usersCollection.findOne({ email: email });
       res.send(user);
 
     });
 
+    // get all agents for public
 
+    app.get('/agents', async (req, res) => {
+      const role = req.query.role;
+      // console.log(role);
+      const query = {
+        role: role
+      }
+      const result = await usersCollection.find(query).toArray();
+      res.send(result)
+    })
+    // get all users for public
+
+    app.get('/users', async (req, res) => {
+      const role = req.query.role;
+      // console.log(role);
+      const query = {
+        role: role
+      }
+      const result = await usersCollection.find(query).toArray();
+      res.send(result)
+    })
+
+    app.put('/verify/:id', async (req, res) => {
+      const id = req.params.id;
+      const data = req.body;
+      const query = { _id: new ObjectId(id) }
+      const options = { upsert: true }
+
+      const updateDoc = {
+        $set: {
+          status: data.status,
+          balance: data?.balance
+        }
+      }
+      const result = await usersCollection.updateOne(query, updateDoc, options)
+      res.send(result)
+    })
 
 
 
